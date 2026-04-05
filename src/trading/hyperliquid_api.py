@@ -340,6 +340,9 @@ class HyperliquidAPI:
     async def get_user_state(self):
         """Retrieve wallet state with enriched position PnL calculations.
 
+        Supports both standard and unified accounts. For unified accounts,
+        the available balance comes from the spot clearinghouse (USDC total).
+
         Returns:
             Dictionary with ``balance``, ``total_value``, and ``positions``.
         """
@@ -358,6 +361,24 @@ class HyperliquidAPI:
             pos["notional_entry"] = abs(size) * entry_px
             enriched_positions.append(pos)
         balance = float(state.get("withdrawable", 0.0))
+
+        # Unified account: perps balance may be 0 while funds are in spot USDC.
+        # Check spot clearinghouse for the actual available balance.
+        if balance == 0 and total_value == 0:
+            try:
+                spot_state = await self._retry(
+                    lambda: self.info.spot_user_state(self.query_address)
+                )
+                for bal in spot_state.get("balances", []):
+                    if bal.get("coin") == "USDC":
+                        spot_total = float(bal.get("total", 0))
+                        spot_hold = float(bal.get("hold", 0))
+                        balance = spot_total - spot_hold
+                        total_value = balance + sum(p.get("pnl", 0.0) for p in enriched_positions)
+                        break
+            except Exception as e:
+                logging.warning("Failed to fetch spot state for unified account: %s", e)
+
         if not total_value:
             total_value = balance + sum(max(p.get("pnl", 0.0), 0.0) for p in enriched_positions)
         return {"balance": balance, "total_value": total_value, "positions": enriched_positions}
