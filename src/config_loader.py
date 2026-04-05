@@ -69,28 +69,41 @@ def _get_list(name: str, default: list[str] | None = None) -> list[str] | None:
 
 
 CONFIG = {
-    "taapi_api_key": _get_env("TAAPI_API_KEY"),  # Optional — no longer required, indicators computed locally from HL candles
+    # Hyperliquid
     "hyperliquid_private_key": _get_env("HYPERLIQUID_PRIVATE_KEY") or _get_env("LIGHTER_PRIVATE_KEY"),
     "mnemonic": _get_env("MNEMONIC"),
-    # Hyperliquid network/base URL overrides
     "hyperliquid_base_url": _get_env("HYPERLIQUID_BASE_URL"),
     "hyperliquid_network": _get_env("HYPERLIQUID_NETWORK", "mainnet"),
-    # LLM via OpenRouter
-    "openrouter_api_key": _get_env("OPENROUTER_API_KEY", required=True),
-    "openrouter_base_url": _get_env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-    "openrouter_referer": _get_env("OPENROUTER_REFERER"),
-    "openrouter_app_title": _get_env("OPENROUTER_APP_TITLE", "trading-agent"),
-    "llm_model": _get_env("LLM_MODEL", "x-ai/grok-4"),
-    # Reasoning tokens
-    "reasoning_enabled": _get_bool("REASONING_ENABLED", False),
-    "reasoning_effort": _get_env("REASONING_EFFORT", "high"),
-    # Provider routing
-    "provider_config": _get_json("PROVIDER_CONFIG"),
-    "provider_quantizations": _get_list("PROVIDER_QUANTIZATIONS"),
-    # Runtime controls via env
-    "assets": _get_env("ASSETS"),  # e.g., "BTC ETH SOL" or "BTC,ETH,SOL"
+
+    # LLM — Anthropic Claude API (primary)
+    "anthropic_api_key": _get_env("ANTHROPIC_API_KEY", required=True),
+    "llm_model": _get_env("LLM_MODEL", "claude-sonnet-4-20250514"),
+    "sanitize_model": _get_env("SANITIZE_MODEL", "claude-haiku-4-5-20251001"),
+    "max_tokens": _get_int("MAX_TOKENS", 4096),
+
+    # Extended thinking (Claude)
+    "thinking_enabled": _get_bool("THINKING_ENABLED", False),
+    "thinking_budget_tokens": _get_int("THINKING_BUDGET_TOKENS", 10000),
+
+    # Runtime controls
+    "assets": _get_env("ASSETS"),  # e.g., "BTC ETH SOL OIL GOLD SPX"
     "interval": _get_env("INTERVAL"),  # e.g., "5m", "1h"
+
+    # Risk management
+    "max_position_pct": _get_env("MAX_POSITION_PCT", "10"),
+    "max_loss_per_position_pct": _get_env("MAX_LOSS_PER_POSITION_PCT", "20"),
+    "max_leverage": _get_env("MAX_LEVERAGE", "10"),
+    "max_total_exposure_pct": _get_env("MAX_TOTAL_EXPOSURE_PCT", "50"),
+    "daily_loss_circuit_breaker_pct": _get_env("DAILY_LOSS_CIRCUIT_BREAKER_PCT", "10"),
+    "mandatory_sl_pct": _get_env("MANDATORY_SL_PCT", "5"),
+    "max_concurrent_positions": _get_env("MAX_CONCURRENT_POSITIONS", "10"),
+    "min_balance_reserve_pct": _get_env("MIN_BALANCE_RESERVE_PCT", "20"),
+
     # API server
     "api_host": _get_env("API_HOST", "0.0.0.0"),
     "api_port": _get_env("APP_PORT") or _get_env("API_PORT") or "3000",
+
+    # Legacy / optional
+    "taapi_api_key": _get_env("TAAPI_API_KEY"),
+    "openrouter_api_key": _get_env("OPENROUTER_API_KEY"),
 }

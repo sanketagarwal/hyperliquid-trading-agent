@@ -6,6 +6,7 @@ import pathlib
 sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from src.agent.decision_maker import TradingAgent
 from src.indicators.local_indicators import compute_all, last_n, latest
+from src.risk_manager import RiskManager
 from src.trading.hyperliquid_api import HyperliquidAPI
 import asyncio
 import logging
@@ -66,6 +67,7 @@ def main():
 
     hyperliquid = HyperliquidAPI()
     agent = TradingAgent(hyperliquid=hyperliquid)
+    risk_mgr = RiskManager()
 
 
     start_time = datetime.now(timezone.utc)
@@ -115,6 +117,37 @@ def main():
                     "unrealized_pnl": round_or_none(pos.get('pnl'), 4),
                     "leverage": pos.get('leverage')
                 })
+
+            # --- RISK: Force-close positions that exceed max loss ---
+            try:
+                positions_to_close = risk_mgr.check_losing_positions(state['positions'])
+                for ptc in positions_to_close:
+                    coin = ptc["coin"]
+                    size = ptc["size"]
+                    is_long = ptc["is_long"]
+                    add_event(f"RISK FORCE-CLOSE: {coin} at {ptc['loss_pct']}% loss (PnL: ${ptc['pnl']})")
+                    try:
+                        if is_long:
+                            await hyperliquid.place_sell_order(coin, size)
+                        else:
+                            await hyperliquid.place_buy_order(coin, size)
+                        await hyperliquid.cancel_all_orders(coin)
+                        # Remove from active trades
+                        for tr in active_trades[:]:
+                            if tr.get('asset') == coin:
+                                active_trades.remove(tr)
+                        with open(diary_path, "a") as f:
+                            f.write(json.dumps({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "asset": coin,
+                                "action": "risk_force_close",
+                                "loss_pct": ptc["loss_pct"],
+                                "pnl": ptc["pnl"],
+                            }) + "\n")
+                    except Exception as fc_err:
+                        add_event(f"Force-close error for {coin}: {fc_err}")
+            except Exception as risk_err:
+                add_event(f"Risk check error: {risk_err}")
 
             recent_diary = []
             try:
@@ -283,10 +316,11 @@ def main():
                     "invocation_count": invocation_count
                 }),
                 ("account", dashboard),
+                ("risk_limits", risk_mgr.get_risk_summary()),
                 ("market_data", market_sections),
                 ("instructions", {
                     "assets": args.assets,
-                    "requirement": "Decide actions for all assets and return a strict JSON array matching the schema."
+                    "requirement": "Decide actions for all assets and return a strict JSON object matching the schema."
                 })
             ])
             context = json.dumps(context_payload, default=json_default)
@@ -363,6 +397,25 @@ def main():
                         if alloc_usd <= 0:
                             add_event(f"Holding {asset}: zero/negative allocation")
                             continue
+
+                        # --- RISK: Validate trade before execution ---
+                        output["current_price"] = current_price
+                        allowed, reason, output = risk_mgr.validate_trade(
+                            output, state, initial_account_value or 0
+                        )
+                        if not allowed:
+                            add_event(f"RISK BLOCKED {asset}: {reason}")
+                            with open(diary_path, "a") as f:
+                                f.write(json.dumps({
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "asset": asset,
+                                    "action": "risk_blocked",
+                                    "reason": reason,
+                                    "original_alloc_usd": alloc_usd,
+                                }) + "\n")
+                            continue
+                        # Use potentially adjusted values from risk manager
+                        alloc_usd = float(output.get("allocation_usd", alloc_usd))
                         amount = alloc_usd / current_price
 
                         order = await hyperliquid.place_buy_order(asset, amount) if is_buy else await hyperliquid.place_sell_order(asset, amount)
@@ -380,12 +433,12 @@ def main():
                         trade_log.append({"type": action, "price": current_price, "amount": amount, "exit_plan": output["exit_plan"], "filled": filled})
                         tp_oid = None
                         sl_oid = None
-                        if output["tp_price"]:
+                        if output.get("tp_price"):
                             tp_order = await hyperliquid.place_take_profit(asset, is_buy, amount, output["tp_price"])
                             tp_oids = hyperliquid.extract_oids(tp_order)
                             tp_oid = tp_oids[0] if tp_oids else None
                             add_event(f"TP placed {asset} at {output['tp_price']}")
-                        if output["sl_price"]:
+                        if output.get("sl_price"):
                             sl_order = await hyperliquid.place_stop_loss(asset, is_buy, amount, output["sl_price"])
                             sl_oids = hyperliquid.extract_oids(sl_order)
                             sl_oid = sl_oids[0] if sl_oids else None
