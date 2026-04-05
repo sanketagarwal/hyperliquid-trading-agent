@@ -418,7 +418,20 @@ def main():
                         alloc_usd = float(output.get("allocation_usd", alloc_usd))
                         amount = alloc_usd / current_price
 
-                        order = await hyperliquid.place_buy_order(asset, amount) if is_buy else await hyperliquid.place_sell_order(asset, amount)
+                        # Place market or limit order
+                        order_type = output.get("order_type", "market")
+                        limit_price = output.get("limit_price")
+
+                        if order_type == "limit" and limit_price:
+                            limit_price = float(limit_price)
+                            if is_buy:
+                                order = await hyperliquid.place_limit_buy(asset, amount, limit_price)
+                            else:
+                                order = await hyperliquid.place_limit_sell(asset, amount, limit_price)
+                            add_event(f"LIMIT {action.upper()} {asset} amount {amount:.4f} at limit ${limit_price}")
+                        else:
+                            order = await hyperliquid.place_buy_order(asset, amount) if is_buy else await hyperliquid.place_sell_order(asset, amount)
+
                         # Confirm by checking recent fills for this asset shortly after placing
                         await asyncio.sleep(1)
                         fills_check = await hyperliquid.get_recent_fills(limit=10)
@@ -469,6 +482,8 @@ def main():
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                                 "asset": asset,
                                 "action": action,
+                                "order_type": order_type,
+                                "limit_price": limit_price,
                                 "allocation_usd": alloc_usd,
                                 "amount": amount,
                                 "entry_price": current_price,

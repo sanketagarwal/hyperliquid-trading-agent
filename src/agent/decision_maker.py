@@ -53,6 +53,10 @@ class TradingAgent:
             "- Choose one: buy / sell / hold.\n"
             "- Proactively harvest profits when price action presents a clear, high-quality opportunity that aligns with your thesis.\n"
             "- You control allocation_usd (but the system will cap it — see risk limits below).\n"
+            "- Order type: set order_type to \"market\" for immediate execution, or \"limit\" for resting orders.\n"
+            "  • For limit orders, you MUST set limit_price. Use limit orders when you want better entry prices (e.g., buying a dip, selling a bounce).\n"
+            "  • For market orders, limit_price should be null.\n"
+            "  • Default is \"market\" if omitted.\n"
             "- TP/SL sanity:\n"
             "  • BUY: tp_price > current_price, sl_price < current_price\n"
             "  • SELL: tp_price < current_price, sl_price > current_price\n"
@@ -74,7 +78,9 @@ class TradingAgent:
             "- Output ONLY a strict JSON object (no markdown, no code fences) with exactly two properties:\n"
             "  • \"reasoning\": long-form string capturing detailed, step-by-step analysis.\n"
             "  • \"trade_decisions\": array ordered to match the provided assets list.\n"
-            "- Each item inside trade_decisions must contain the keys: asset, action, allocation_usd, tp_price, sl_price, exit_plan, rationale.\n"
+            "- Each item inside trade_decisions must contain the keys: asset, action, allocation_usd, order_type, limit_price, tp_price, sl_price, exit_plan, rationale.\n"
+            "  • order_type: \"market\" (default) or \"limit\"\n"
+            "  • limit_price: required if order_type is \"limit\", null otherwise\n"
             "- Do not emit Markdown or any extra properties.\n"
         )
 
@@ -229,7 +235,8 @@ class TradingAgent:
                         "You are a strict JSON normalizer. Return ONLY a JSON object with two keys: "
                         "\"reasoning\" (string) and \"trade_decisions\" (array). "
                         "Each trade_decisions item must have: asset, action (buy/sell/hold), "
-                        "allocation_usd (number), tp_price (number or null), sl_price (number or null), "
+                        "allocation_usd (number), order_type (\"market\" or \"limit\"), "
+                        "limit_price (number or null), tp_price (number or null), sl_price (number or null), "
                         "exit_plan (string), rationale (string). "
                         f"Valid assets: {json.dumps(list(assets_list))}. "
                         "If input is wrapped in markdown or has prose, extract just the JSON. Do not add fields."
@@ -317,6 +324,8 @@ class TradingAgent:
                     for item in decisions:
                         if isinstance(item, dict):
                             item.setdefault("allocation_usd", 0.0)
+                            item.setdefault("order_type", "market")
+                            item.setdefault("limit_price", None)
                             item.setdefault("tp_price", None)
                             item.setdefault("sl_price", None)
                             item.setdefault("exit_plan", "")

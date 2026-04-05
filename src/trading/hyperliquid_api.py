@@ -171,6 +171,39 @@ class HyperliquidAPI:
         amount = self.round_size(asset, amount)
         return await self._retry(lambda: self.exchange.market_open(asset, False, amount, None, slippage))
 
+    async def place_limit_buy(self, asset, amount, limit_price, tif="Gtc"):
+        """Submit a limit buy order.
+
+        Args:
+            asset: Market symbol.
+            amount: Contract size before rounding.
+            limit_price: Limit price for the order.
+            tif: Time-in-force — "Gtc" (good-til-canceled), "Ioc" (immediate-or-cancel),
+                 or "Alo" (add-liquidity-only / post-only).
+
+        Returns:
+            Raw SDK response from :meth:`Exchange.order`.
+        """
+        amount = self.round_size(asset, amount)
+        order_type = {"limit": {"tif": tif}}
+        return await self._retry(lambda: self.exchange.order(asset, True, amount, limit_price, order_type))
+
+    async def place_limit_sell(self, asset, amount, limit_price, tif="Gtc"):
+        """Submit a limit sell order.
+
+        Args:
+            asset: Market symbol.
+            amount: Contract size before rounding.
+            limit_price: Limit price for the order.
+            tif: Time-in-force — "Gtc", "Ioc", or "Alo".
+
+        Returns:
+            Raw SDK response from :meth:`Exchange.order`.
+        """
+        amount = self.round_size(asset, amount)
+        order_type = {"limit": {"tif": tif}}
+        return await self._retry(lambda: self.exchange.order(asset, False, amount, limit_price, order_type))
+
     async def place_take_profit(self, asset, is_buy, amount, tp_price):
         """Create a reduce-only trigger order that executes a take-profit exit.
 
